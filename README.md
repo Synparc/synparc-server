@@ -1,38 +1,38 @@
 # synparc-server
 
-> âš™ï¸ Backend central de la plateforme Synparc â€” API REST, moteur de corrÃ©lation et gestion des migrations PostgreSQL/TimescaleDB.
+> ⚙️ Backend central de la plateforme Synparc — API REST, moteur de corrélation et gestion des migrations PostgreSQL/TimescaleDB.
 
 ## Stack
 
 - **Runtime** : Node.js 20+ avec TypeScript
 - **Framework** : Fastify (ou Express)
-- **Base de donnÃ©es** : PostgreSQL 15 + extension TimescaleDB
+- **Base de données** : PostgreSQL 15 + extension TimescaleDB
 - **Migrations** : node-pg-migrate
 - **Authentification** : JWT (dashboard) + Bearer token (agents)
 
-## ResponsabilitÃ©s
+## Responsabilités
 
 | Module | Description |
 |--------|-------------|
-| ðŸ”Œ API REST | Endpoints pour agents, dashboard web et connecteurs |
-| ðŸ§  Moteur de corrÃ©lation | Job planifiÃ© qui calcule `effective_permissions` |
-| ðŸ—„ï¸ Migrations DB | Gestion du schÃ©ma PostgreSQL/TimescaleDB |
-| ðŸ“¥ Ingestion mÃ©triques | RÃ©ception et stockage des heartbeats agents dans TimescaleDB |
-| ðŸ” Gestion enrÃ´lement | GÃ©nÃ©ration et validation des tokens machines |
+| 🔌 API REST | Endpoints pour agents, dashboard web et connecteurs |
+| 🧠 Moteur de corrélation | Job planifié qui calcule `effective_permissions` |
+| 🗄️ Migrations DB | Gestion du schéma PostgreSQL/TimescaleDB |
+| 📥 Ingestion métriques | Réception et stockage des heartbeats agents dans TimescaleDB |
+| 🔐 Gestion enrôlement | Génération et validation des tokens machines |
 
 ## Endpoints principaux
 
 ```
-POST   /api/v1/agent/heartbeat          # RÃ©ception mÃ©triques + sessions (agents)
-POST   /api/v1/agent/enroll            # EnrÃ´lement d'une nouvelle machine
+POST   /api/v1/agent/heartbeat          # Réception métriques + sessions (agents)
+POST   /api/v1/agent/enroll            # Enrôlement d'une nouvelle machine
 
 GET    /api/v1/users                   # Liste des utilisateurs AD
-GET    /api/v1/users/:guid             # Fiche utilisateur croisÃ©e
+GET    /api/v1/users/:guid             # Fiche utilisateur croisée
 GET    /api/v1/machines                # Liste des machines
 GET    /api/v1/permissions/:userGuid   # Permissions effectives d'un utilisateur
 
-POST   /api/v1/sync/ad                 # DÃ©clenchement sync AD (depuis connecteurs)
-POST   /api/v1/sync/m365              # DÃ©clenchement sync M365
+POST   /api/v1/sync/ad                 # Déclenchement sync AD (depuis connecteurs)
+POST   /api/v1/sync/m365              # Déclenchement sync M365
 ```
 
 ## Variables d'environnement
@@ -44,16 +44,16 @@ AGENT_TOKEN_SALT=your-salt
 PORT=3001
 ```
 
-## DÃ©veloppement local
+## Développement local
 
 ```bash
 npm install
 npm run migrate       # Applique les migrations DB
-npm run dev           # DÃ©marre en mode dÃ©veloppement (ts-node-dev)
+npm run dev           # Démarre en mode développement (ts-node-dev)
 npm run build         # Compile TypeScript -> JavaScript
-npm start             # DÃ©marre la version compilÃ©e
+npm start             # Démarre la version compilée
 ```
 
-## SchÃ©ma de base de donnÃ©es
+## Schéma de base de données
 
-Voir [ARCHITECTURE.md](https://github.com/Synparc/synparc-internal) (dÃ©pÃ´t privÃ©) pour le schÃ©ma SQL complet.
+Voir [ARCHITECTURE.md](https://github.com/Synparc/synparc-internal) (dépôt privé) pour le schéma SQL complet.
