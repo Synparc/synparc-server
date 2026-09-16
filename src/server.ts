@@ -3,9 +3,14 @@ import "dotenv/config";
 import { db } from "./db/index.js";
 import { sql } from "drizzle-orm";
 
+import { agentRoutes } from "./routes/agent.js";
+
 const fastify = Fastify({
   logger: true,
 });
+
+// Enregistrement des routes
+fastify.register(agentRoutes, { prefix: "/api/agent" });
 
 // Route de base pour vérifier que le serveur tourne
 fastify.get("/health", async (request, reply) => {
