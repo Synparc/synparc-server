@@ -4,6 +4,8 @@ import { db } from "./db/index.js";
 import { sql } from "drizzle-orm";
 
 import { agentRoutes } from "./routes/agent.js";
+import { connectorRoutes } from "./routes/connectors.js";
+import { webRoutes } from "./routes/web.js";
 
 const fastify = Fastify({
   logger: true,
@@ -11,6 +13,8 @@ const fastify = Fastify({
 
 // Enregistrement des routes
 fastify.register(agentRoutes, { prefix: "/api/agent" });
+fastify.register(connectorRoutes, { prefix: "/api/connectors" });
+fastify.register(webRoutes, { prefix: "/api/web" });
 
 // Route de base pour vérifier que le serveur tourne
 fastify.get("/health", async (request, reply) => {

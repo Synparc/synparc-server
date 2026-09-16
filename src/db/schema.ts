@@ -125,3 +125,56 @@ export const effectivePermissions = pgTable("effective_permissions", {
 }, (t) => ({
   uniquePermission: uniqueIndex("idx_eff_perm_unique").on(t.userId, t.resourceId, t.accessLevel, t.originType),
 }));
+
+
+// --- 4. MICROSOFT 365 ---
+
+export const m365Licenses = pgTable("m365_licenses", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  userId: uuid("user_id").notNull().references(() => users.id, { onDelete: 'cascade' }),
+  licenseSku: text("license_sku").notNull(),
+  mfaEnabled: boolean("mfa_enabled"),
+  lastSyncedAt: timestamp("last_synced_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+
+// --- 5. LICENSING SYNPARC ---
+
+export const licenseKeys = pgTable("license_keys", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  keyValue: text("key_value").unique().notNull(),
+  maxNodes: integer("max_nodes").notNull(),
+  issuedTo: text("issued_to"),
+  expiresAt: timestamp("expires_at", { withTimezone: true }),
+  status: text("status").notNull(), // 'active' | 'revoked' | 'expired'
+});
+
+export const licensedNodes = pgTable("licensed_nodes", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  licenseKeyId: uuid("license_key_id").notNull().references(() => licenseKeys.id),
+  machineId: uuid("machine_id").notNull().references(() => machines.id),
+  activatedAt: timestamp("activated_at", { withTimezone: true }).notNull().defaultNow(),
+  revokedAt: timestamp("revoked_at", { withTimezone: true }),
+});
+
+
+// --- 6. INFRA & CONNECTEURS ---
+
+export const syncRuns = pgTable("sync_runs", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  connectorType: text("connector_type").notNull(), // 'ad' | 'm365' | 'smb_scanner'
+  startedAt: timestamp("started_at", { withTimezone: true }).notNull(),
+  finishedAt: timestamp("finished_at", { withTimezone: true }),
+  status: text("status").notNull(), // 'success' | 'failed' | 'partial'
+  recordsProcessed: integer("records_processed"),
+  errorMessage: text("error_message"),
+});
+
+export const enrollmentTokens = pgTable("enrollment_tokens", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  tokenHash: text("token_hash").notNull(),
+  machineId: uuid("machine_id").references(() => machines.id),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  revoked: boolean("revoked").notNull().default(false),
+});
+
