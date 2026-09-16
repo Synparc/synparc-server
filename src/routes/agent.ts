@@ -28,7 +28,9 @@ export const agentRoutes: FastifyPluginAsync = async (fastify, opts) => {
           osVersion: payload.osVersion,
           lastIp: request.ip,
           lastCheckinAt: new Date(),
-          lastIpSeenAt: new Date()
+          lastIpSeenAt: new Date(),
+          createdAt: new Date(),
+          updatedAt: new Date()
         })
         .onConflictDoUpdate({
           target: machines.adGuid,

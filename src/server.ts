@@ -7,8 +7,15 @@ import { agentRoutes } from "./routes/agent.js";
 import { connectorRoutes } from "./routes/connectors.js";
 import { webRoutes } from "./routes/web.js";
 
+import cors from "@fastify/cors";
+
 const fastify = Fastify({
   logger: true,
+});
+
+fastify.register(cors, {
+  origin: "*", // Pour le dev local
+  methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"]
 });
 
 // Enregistrement des routes
@@ -35,9 +42,10 @@ fastify.get("/health", async (request, reply) => {
 // Démarrage du serveur
 const start = async () => {
   try {
-    const port = parseInt(process.env.PORT || "3000");
+    const port = parseInt(process.env.PORT || "3001");
     await fastify.listen({ port, host: "0.0.0.0" });
     console.log(`🚀 Synparc Server listening on http://localhost:${port}`);
+    console.log(fastify.printRoutes());
   } catch (err) {
     fastify.log.error(err);
     process.exit(1);
