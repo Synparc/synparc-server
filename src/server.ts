@@ -1,0 +1,38 @@
+import Fastify from "fastify";
+import "dotenv/config";
+import { db } from "./db/index.js";
+import { sql } from "drizzle-orm";
+
+const fastify = Fastify({
+  logger: true,
+});
+
+// Route de base pour vérifier que le serveur tourne
+fastify.get("/health", async (request, reply) => {
+  try {
+    // Vérification de la connexion à la base de données
+    const result = await db.execute(sql`SELECT 1 as is_alive`);
+    return { 
+      status: "ok", 
+      message: "Synparc Server is running",
+      db_alive: result.length > 0 
+    };
+  } catch (error) {
+    fastify.log.error(error);
+    reply.status(500).send({ status: "error", message: "Database connection failed" });
+  }
+});
+
+// Démarrage du serveur
+const start = async () => {
+  try {
+    const port = parseInt(process.env.PORT || "3000");
+    await fastify.listen({ port, host: "0.0.0.0" });
+    console.log(`🚀 Synparc Server listening on http://localhost:${port}`);
+  } catch (err) {
+    fastify.log.error(err);
+    process.exit(1);
+  }
+};
+
+start();

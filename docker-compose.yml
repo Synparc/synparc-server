@@ -1,0 +1,20 @@
+version: '3.8'
+
+services:
+  db:
+    # Image officielle TimescaleDB (inclut PostgreSQL 15)
+    image: timescale/timescaledb-ha:pg15-latest
+    container_name: synparc-db
+    environment:
+      - POSTGRES_DB=synparc
+      - POSTGRES_USER=synparc_admin
+      - POSTGRES_PASSWORD=synparc_dev_password
+    ports:
+      - "5432:5432"
+    volumes:
+      # Persistance des données (pour ne pas tout perdre à chaque redémarrage)
+      - synparc-db-data:/home/postgres/pgdata/data
+    restart: unless-stopped
+
+volumes:
+  synparc-db-data:
