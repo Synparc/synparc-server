@@ -221,7 +221,7 @@ export async function seedInitialAclsAndMemberships() {
     const un = (u.username || "").toLowerCase();
     const dn = (u.displayName || "").toLowerCase();
     const email = (u.email || "").toLowerCase();
-    const isMfa = un.includes("djael") || dn.includes("djael") || email.includes("djael") || un.includes("admin") || un === "user1";
+    const isMfa = un.includes("djael") || dn.includes("djael") || email.includes("djael") || un.includes("admin");
     const sku = (un.includes("djael") || dn.includes("djael") || un.includes("admin")) ? "Microsoft 365 Enterprise E5" : "Microsoft 365 Business Premium";
 
     const userLic = await db.select().from(m365Licenses).where(eq(m365Licenses.userId, u.id)).limit(1);
@@ -239,9 +239,6 @@ export async function seedInitialAclsAndMemberships() {
 }
 
 export const connectorRoutes: FastifyPluginAsync = async (fastify, opts) => {
-
-  // Initialize initial ACL seeding
-  seedInitialAclsAndMemberships().catch(() => {});
 
   // 1. Synchro Active Directory
   fastify.post("/ad/sync", async (request, reply) => {
