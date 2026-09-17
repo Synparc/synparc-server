@@ -1,6 +1,6 @@
 import { db } from "../db/index.js";
 import { systemSettings, m365Licenses, users, syncRuns } from "../db/schema.js";
-import { eq, inArray } from "drizzle-orm";
+import { eq, inArray, sql } from "drizzle-orm";
 
 export interface M365Config {
   tenantId: string;
@@ -8,24 +8,48 @@ export interface M365Config {
   clientSecret: string;
 }
 
-export async function getM365Config(): Promise<M365Config> {
-  const settings = await db.select().from(systemSettings).where(
-    inArray(systemSettings.key, ["m365_tenant_id", "m365_client_id", "m365_client_secret"])
-  );
-
-  const configMap: Record<string, string> = {};
-  for (const row of settings) {
-    configMap[row.key] = row.value;
+export async function ensureSystemSettingsTable() {
+  try {
+    await db.execute(sql`
+      CREATE TABLE IF NOT EXISTS system_settings (
+        key TEXT PRIMARY KEY,
+        value TEXT NOT NULL,
+        updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      );
+    `);
+  } catch (e) {
+    // Ignore error if table exists
   }
+}
 
-  return {
-    tenantId: configMap["m365_tenant_id"] || "",
-    clientId: configMap["m365_client_id"] || "",
-    clientSecret: configMap["m365_client_secret"] || "",
-  };
+export async function getM365Config(): Promise<M365Config> {
+  await ensureSystemSettingsTable().catch(() => {});
+  try {
+    const settings = await db.select().from(systemSettings).where(
+      inArray(systemSettings.key, ["m365_tenant_id", "m365_client_id", "m365_client_secret"])
+    );
+
+    const configMap: Record<string, string> = {};
+    for (const row of settings) {
+      configMap[row.key] = row.value;
+    }
+
+    return {
+      tenantId: configMap["m365_tenant_id"] || "",
+      clientId: configMap["m365_client_id"] || "",
+      clientSecret: configMap["m365_client_secret"] || "",
+    };
+  } catch (e) {
+    return {
+      tenantId: "",
+      clientId: "",
+      clientSecret: "",
+    };
+  }
 }
 
 export async function saveM365Config(config: Partial<M365Config>) {
+  await ensureSystemSettingsTable().catch(() => {});
   const entries: Array<{ key: string; value: string }> = [];
 
   if (config.tenantId !== undefined) {
