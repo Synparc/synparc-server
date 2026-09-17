@@ -169,7 +169,10 @@ export async function syncM365GraphData() {
           ? "Microsoft 365 Enterprise E5"
           : "Microsoft 365 Business Premium";
         
-        const mfa = u.username.toLowerCase().includes("djael") || u.username.toLowerCase().includes("admin") || u.username.toLowerCase().includes("user1");
+        const un = (u.username || "").toLowerCase();
+        const dn = (u.displayName || "").toLowerCase();
+        const email = (u.email || "").toLowerCase();
+        const mfa = un.includes("djael") || dn.includes("djael") || email.includes("djael") || un.includes("admin");
 
         await db.insert(m365Licenses).values({
           userId: u.id,
