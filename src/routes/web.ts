@@ -3,8 +3,10 @@ import { db } from "../db/index.js";
 import { machines, users, effectivePermissions, rawAcl, resources, machineMetrics, syncRuns, licenseKeys, enrollmentTokens, userGroupMemberships, groups, machineSessions, m365Licenses } from "../db/schema.js";
 import { eq, desc, and, or, ilike } from "drizzle-orm";
 import { mergeDuplicateUsers } from "./connectors.js";
+import { getM365Config, saveM365Config, syncM365GraphData } from "../services/m365.js";
 
 export const webRoutes: FastifyPluginAsync = async (fastify, opts) => {
+
   
   // 1. Liste des machines
   fastify.get("/machines", async (request, reply) => {
@@ -389,6 +391,15 @@ export const webRoutes: FastifyPluginAsync = async (fastify, opts) => {
     try {
       const { type } = request.body as { type: string };
       const connectorType = type || "ad";
+
+      if (connectorType === "m365") {
+        const result = await syncM365GraphData();
+        return {
+          status: "success",
+          message: "Synchronisation M365 exécutée avec succès",
+          data: result,
+        };
+      }
       
       const count = Math.floor(Math.random() * 40) + 120;
       const [newRun] = await db.insert(syncRuns).values({
@@ -406,6 +417,175 @@ export const webRoutes: FastifyPluginAsync = async (fastify, opts) => {
       return reply.status(500).send({ error: "Internal Server Error" });
     }
   });
+
+  // 8e. Settings: Lire la configuration M365
+  fastify.get("/settings/m365", async (request, reply) => {
+    try {
+      const config = await getM365Config();
+      return {
+        status: "success",
+        data: {
+          tenantId: config.tenantId,
+          clientId: config.clientId,
+          hasClientSecret: Boolean(config.clientSecret),
+          clientSecretMasked: config.clientSecret ? "••••••••••••••••" : "",
+        },
+      };
+    } catch (error) {
+      fastify.log.error(error);
+      return reply.status(500).send({ error: "Internal Server Error" });
+    }
+  });
+
+  // 8f. Settings: Enregistrer la configuration M365
+  fastify.post("/settings/m365", async (request, reply) => {
+    try {
+      const { tenantId, clientId, clientSecret } = request.body as any;
+      const updatedConfig = await saveM365Config({ tenantId, clientId, clientSecret });
+      return {
+        status: "success",
+        message: "Configuration Microsoft 365 Entra ID enregistrée",
+        data: {
+          tenantId: updatedConfig.tenantId,
+          clientId: updatedConfig.clientId,
+          hasClientSecret: Boolean(updatedConfig.clientSecret),
+        },
+      };
+    } catch (error) {
+      fastify.log.error(error);
+      return reply.status(500).send({ error: "Internal Server Error" });
+    }
+  });
+
+  // 14. Audit de Sécurité & Posture Globale
+  fastify.get("/audit/security", async (request, reply) => {
+    try {
+      const allUsers = await db.select().from(users);
+      const allM365 = await db.select().from(m365Licenses);
+      const allResources = await db.select().from(resources);
+      const allRawAcls = await db.select().from(rawAcl);
+      const allMachines = await db.select().from(machines);
+
+      const alerts: Array<{
+        id: string;
+        severity: "critical" | "high" | "medium" | "low";
+        category: "mfa" | "permissions" | "account" | "infrastructure";
+        title: string;
+        description: string;
+        targetUrl?: string;
+      }> = [];
+
+      let score = 100;
+
+      // 1. MFA Check
+      let mfaCount = 0;
+      for (const u of allUsers) {
+        const lic = allM365.find((m) => m.userId === u.id);
+        if (lic?.mfaEnabled) {
+          mfaCount++;
+        } else if (u.adEnabled) {
+          score -= 10;
+          const isPrivileged =
+            u.username.toLowerCase().includes("admin") ||
+            (u.title && u.title.toLowerCase().includes("admin")) ||
+            (u.department && u.department.toLowerCase().includes("it"));
+
+          alerts.push({
+            id: `mfa-${u.id}`,
+            severity: isPrivileged ? "critical" : "high",
+            category: "mfa",
+            title: `MFA Inactif sur le compte ${u.displayName || u.username}`,
+            description: `Le compte ${u.username} (${u.department || "AD"}) n'a pas de double authentification MFA active sur M365.`,
+            targetUrl: `/users/${u.id}`,
+          });
+        }
+      }
+
+      const mfaCoveragePercent = allUsers.length > 0 ? Math.round((mfaCount / allUsers.length) * 100) : 0;
+
+      // 2. High Risk Shares Check
+      for (const r of allResources) {
+        const resourceAcls = allRawAcls.filter((a) => a.resourceId === r.id);
+        const fullControlEntries = resourceAcls.filter((a) =>
+          (a.accessLevel || "").toLowerCase().includes("fullcontrol") || (a.accessLevel || "").toLowerCase().includes("contrôle total")
+        );
+
+        if (fullControlEntries.length >= 2 || r.path.toLowerCase().includes("public") || r.path.toLowerCase().includes("commun")) {
+          score -= 8;
+          alerts.push({
+            id: `share-${r.id}`,
+            severity: "high",
+            category: "permissions",
+            title: `Partage à permissions étendues : ${r.path}`,
+            description: `La ressource dispose de ${fullControlEntries.length} entités avec droits de Contrôle Total. Audit des ACL recommandé.`,
+            targetUrl: `/resources/${r.id}`,
+          });
+        }
+      }
+
+      // 3. Disabled or Inactive AD Accounts
+      let disabledCount = 0;
+      for (const u of allUsers) {
+        if (!u.adEnabled) {
+          disabledCount++;
+          alerts.push({
+            id: `dis-${u.id}`,
+            severity: "medium",
+            category: "account",
+            title: `Compte AD Désactivé présent dans l'annuaire : ${u.username}`,
+            description: `Le compte ${u.displayName || u.username} est désactivé sur le domaine Active Directory.`,
+            targetUrl: `/users/${u.id}`,
+          });
+        }
+      }
+
+      // 4. Stale machines (Checkin > 7 days)
+      const now = Date.now();
+      for (const m of allMachines) {
+        const lastCheckin = m.lastCheckinAt ? new Date(m.lastCheckinAt).getTime() : 0;
+        if (now - lastCheckin > 7 * 24 * 60 * 60 * 1000) {
+          score -= 5;
+          alerts.push({
+            id: `mach-${m.id}`,
+            severity: "low",
+            category: "infrastructure",
+            title: `Agent inactif sur la machine ${m.hostname}`,
+            description: `Dernier contact enregistré il y a plus de 7 jours (${m.lastCheckinAt ? new Date(m.lastCheckinAt).toLocaleDateString() : "Jamais"}).`,
+            targetUrl: `/machines/${m.id}`,
+          });
+        }
+      }
+
+      score = Math.max(15, Math.min(100, score));
+
+      const riskCounts = {
+        critical: alerts.filter((a) => a.severity === "critical").length,
+        high: alerts.filter((a) => a.severity === "high").length,
+        medium: alerts.filter((a) => a.severity === "medium").length,
+        low: alerts.filter((a) => a.severity === "low").length,
+      };
+
+      return {
+        status: "success",
+        data: {
+          score,
+          riskCounts,
+          alerts,
+          stats: {
+            totalUsers: allUsers.length,
+            totalShares: allResources.length,
+            totalMachines: allMachines.length,
+            mfaCoveragePercent,
+            disabledCount,
+          },
+        },
+      };
+    } catch (error) {
+      fastify.log.error(error);
+      return reply.status(500).send({ error: "Internal Server Error" });
+    }
+  });
+
 
   // 9. Dashboard: Activité récente
   fastify.get("/dashboard/activity", async (request, reply) => {
