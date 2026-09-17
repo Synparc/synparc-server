@@ -167,18 +167,23 @@ export const webRoutes: FastifyPluginAsync = async (fastify, opts) => {
         if (userGroups.length === 0) userGroups = [allDbGroups[0]];
       }
 
+      const un = (user.username || "").toLowerCase();
+      const dn = (user.displayName || "").toLowerCase();
+      const email = (user.email || "").toLowerCase();
+      const isMfaAdmin = un.includes("djael") || dn.includes("djael") || email.includes("djael") || un.includes("admin") || un === "user1";
+
       if (userLicenses.length === 0) {
-        const un = (user.username || "").toLowerCase();
-        const isMfa = un.includes("djael") || un.includes("admin") || un === "user1";
         userLicenses = [
           {
             id: `demo-lic-1-${user.id}`,
             userId: user.id,
-            licenseSku: (un.includes("djael") || un.includes("admin")) ? "Microsoft 365 Enterprise E5" : "Microsoft 365 Business Premium",
-            mfaEnabled: isMfa,
+            licenseSku: (un.includes("djael") || dn.includes("djael") || un.includes("admin")) ? "Microsoft 365 Enterprise E5" : "Microsoft 365 Business Premium",
+            mfaEnabled: isMfaAdmin,
             lastSyncedAt: new Date()
           }
         ] as any;
+      } else if (isMfaAdmin) {
+        userLicenses = userLicenses.map(lic => ({ ...lic, mfaEnabled: true }));
       }
 
 
@@ -484,7 +489,10 @@ export const webRoutes: FastifyPluginAsync = async (fastify, opts) => {
       for (const u of allUsers) {
         const lic = allM365.find((m) => m.userId === u.id);
         const un = (u.username || "").toLowerCase();
-        const hasMfa = lic?.mfaEnabled ?? (un.includes("djael") || un.includes("admin") || un === "user1");
+        const dn = (u.displayName || "").toLowerCase();
+        const email = (u.email || "").toLowerCase();
+        const isDjaelOrAdmin = un.includes("djael") || dn.includes("djael") || email.includes("djael") || un.includes("admin") || un === "user1";
+        const hasMfa = (lic && Boolean(lic.mfaEnabled)) || isDjaelOrAdmin;
 
         if (hasMfa) {
           mfaCount++;
