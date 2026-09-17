@@ -153,87 +153,7 @@ export const webRoutes: FastifyPluginAsync = async (fastify, opts) => {
       .leftJoin(machines, eq(resources.hostingMachineId, machines.id))
       .where(eq(effectivePermissions.userId, id));
 
-      let userLicenses = await db.select().from(m365Licenses).where(eq(m365Licenses.userId, id));
-
-      // --- Fallbacks enrichis pour les comptes de test sans liaisons directes ---
-      const allDbGroups = await db.select().from(groups);
-      const allDbResources = await db.select().from(resources);
-      const allDbMachines = await db.select().from(machines);
-
-      if (userGroups.length === 0 && allDbGroups.length > 0) {
-        // Sélectionner 1 à 3 groupes réalistes basés sur un hash déterministe
-        const numHash = (user.username || "").split('').reduce((acc, c) => acc + c.charCodeAt(0), 0);
-        userGroups = allDbGroups.filter((_, idx) => (idx + numHash) % 2 === 0);
-        if (userGroups.length === 0) userGroups = [allDbGroups[0]];
-      }
-
-      const un = (user.username || "").toLowerCase();
-      const dn = (user.displayName || "").toLowerCase();
-      const email = (user.email || "").toLowerCase();
-      const isMfaAdmin = un.includes("djael") || dn.includes("djael") || email.includes("djael") || un.includes("admin") || un === "user1";
-
-      if (userLicenses.length === 0) {
-        userLicenses = [
-          {
-            id: `demo-lic-1-${user.id}`,
-            userId: user.id,
-            licenseSku: (un.includes("djael") || dn.includes("djael") || un.includes("admin")) ? "Microsoft 365 Enterprise E5" : "Microsoft 365 Business Premium",
-            mfaEnabled: isMfaAdmin,
-            lastSyncedAt: new Date()
-          }
-        ] as any;
-      } else if (isMfaAdmin) {
-        userLicenses = userLicenses.map(lic => ({ ...lic, mfaEnabled: true }));
-      }
-
-
-      if (userSessions.length === 0 && allDbMachines.length > 0) {
-        const targetMachine = allDbMachines[0];
-        userSessions = [
-          {
-            id: `demo-sess-1-${user.id}`,
-            sessionStart: new Date(Date.now() - 3600000 * 2),
-            sessionEnd: null,
-            sessionType: "interactive",
-            hostname: targetMachine.hostname,
-            machineId: targetMachine.id
-          }
-        ];
-      }
-
-      if (userPermissions.length === 0 && allDbResources.length > 0) {
-        const usernameLower = (user.username || "").toLowerCase();
-
-        // Filtrer les dossiers personnels appartenant à d'AUTRES utilisateurs
-        const validResources = allDbResources.filter(r => {
-          const pathLower = r.path.toLowerCase();
-          if (pathLower.includes('personnel$') || pathLower.includes('homes') || pathLower.includes('users\\')) {
-            return pathLower.includes(usernameLower);
-          }
-          return true;
-        });
-
-        const numHash = (user.username || "").split('').reduce((acc, c) => acc + c.charCodeAt(0), 0);
-        userPermissions = validResources.slice(0, 3).map((r, idx) => ({
-          accessLevel: (idx + numHash) % 3 === 0 ? "Contrôle Total" : (idx + numHash) % 2 === 0 ? "Lecture / Écriture" : "Lecture seule",
-          originType: idx % 2 === 0 ? "inherited_group" : "direct",
-          resourcePath: r.path,
-          machineName: allDbMachines[0]?.hostname || "POSTE71",
-          machineId: allDbMachines[0]?.id || null
-        }));
-
-        // Si l'utilisateur n'a pas son propre dossier Personnel dans les résultats, lui ajouter son dossier perso dédié
-        const hasPersonalShare = userPermissions.some(p => p.resourcePath.toLowerCase().includes('personnel$'));
-        if (!hasPersonalShare) {
-          userPermissions.unshift({
-            accessLevel: "Contrôle Total",
-            originType: "direct",
-            resourcePath: `\\\\SV201914\\Personnel$\\${user.username || 'Utilisateur'}`,
-            machineName: allDbMachines[0]?.hostname || "POSTE71",
-            machineId: allDbMachines[0]?.id || null
-          });
-        }
-      }
+      const userLicenses = await db.select().from(m365Licenses).where(eq(m365Licenses.userId, id));
 
       return {
         status: "success",
@@ -491,7 +411,7 @@ export const webRoutes: FastifyPluginAsync = async (fastify, opts) => {
         const un = (u.username || "").toLowerCase();
         const dn = (u.displayName || "").toLowerCase();
         const email = (u.email || "").toLowerCase();
-        const isDjaelOrAdmin = un.includes("djael") || dn.includes("djael") || email.includes("djael") || un.includes("admin") || un === "user1";
+        const isDjaelOrAdmin = un.includes("djael") || dn.includes("djael") || email.includes("djael") || un.includes("admin");
         const hasMfa = (lic && Boolean(lic.mfaEnabled)) || isDjaelOrAdmin;
 
         if (hasMfa) {
