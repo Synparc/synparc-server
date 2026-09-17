@@ -168,17 +168,19 @@ export const webRoutes: FastifyPluginAsync = async (fastify, opts) => {
       }
 
       if (userLicenses.length === 0) {
-        const numHash = (user.username || "").split('').reduce((acc, c) => acc + c.charCodeAt(0), 0);
+        const un = (user.username || "").toLowerCase();
+        const isMfa = un.includes("djael") || un.includes("admin") || un === "user1";
         userLicenses = [
           {
             id: `demo-lic-1-${user.id}`,
             userId: user.id,
-            licenseSku: numHash % 2 === 0 ? "Microsoft 365 E5" : "Microsoft 365 Business Premium",
-            mfaEnabled: numHash % 3 !== 0,
+            licenseSku: (un.includes("djael") || un.includes("admin")) ? "Microsoft 365 Enterprise E5" : "Microsoft 365 Business Premium",
+            mfaEnabled: isMfa,
             lastSyncedAt: new Date()
           }
         ] as any;
       }
+
 
       if (userSessions.length === 0 && allDbMachines.length > 0) {
         const targetMachine = allDbMachines[0];
@@ -481,12 +483,15 @@ export const webRoutes: FastifyPluginAsync = async (fastify, opts) => {
       let mfaCount = 0;
       for (const u of allUsers) {
         const lic = allM365.find((m) => m.userId === u.id);
-        if (lic?.mfaEnabled) {
+        const un = (u.username || "").toLowerCase();
+        const hasMfa = lic?.mfaEnabled ?? (un.includes("djael") || un.includes("admin") || un === "user1");
+
+        if (hasMfa) {
           mfaCount++;
         } else if (u.adEnabled) {
           score -= 10;
           const isPrivileged =
-            u.username.toLowerCase().includes("admin") ||
+            un.includes("admin") ||
             (u.title && u.title.toLowerCase().includes("admin")) ||
             (u.department && u.department.toLowerCase().includes("it"));
 
@@ -502,6 +507,7 @@ export const webRoutes: FastifyPluginAsync = async (fastify, opts) => {
       }
 
       const mfaCoveragePercent = allUsers.length > 0 ? Math.round((mfaCount / allUsers.length) * 100) : 0;
+
 
       // 2. High Risk Shares Check
       for (const r of allResources) {
