@@ -216,24 +216,24 @@ export async function seedInitialAclsAndMemberships() {
   // 3. Compute real effective permissions from DB ACLs + Memberships
   await recomputeEffectivePermissions();
 
-  // 4. Seed m365_licenses if empty
-  const existingM365 = await db.select().from(m365Licenses).limit(1);
-  if (existingM365.length === 0) {
-    const licsToInsert = [];
-    for (const u of allUsers) {
-      const username = (u.username || "").toLowerCase();
-      const isMfa = username.includes("djael") || username.includes("admin") || username === "user1";
-      const sku = (username.includes("djael") || username.includes("admin")) ? "Microsoft 365 Enterprise E5" : "Microsoft 365 Business Premium";
-      
-      licsToInsert.push({
+  // 4. Seed & update m365_licenses for all users
+  for (const u of allUsers) {
+    const un = (u.username || "").toLowerCase();
+    const dn = (u.displayName || "").toLowerCase();
+    const email = (u.email || "").toLowerCase();
+    const isMfa = un.includes("djael") || dn.includes("djael") || email.includes("djael") || un.includes("admin") || un === "user1";
+    const sku = (un.includes("djael") || dn.includes("djael") || un.includes("admin")) ? "Microsoft 365 Enterprise E5" : "Microsoft 365 Business Premium";
+
+    const userLic = await db.select().from(m365Licenses).where(eq(m365Licenses.userId, u.id)).limit(1);
+    if (userLic.length === 0) {
+      await db.insert(m365Licenses).values({
         userId: u.id,
         licenseSku: sku,
         mfaEnabled: isMfa,
         lastSyncedAt: new Date()
-      });
-    }
-    if (licsToInsert.length > 0) {
-      await db.insert(m365Licenses).values(licsToInsert).onConflictDoNothing();
+      }).catch(() => {});
+    } else if (isMfa && !userLic[0].mfaEnabled) {
+      await db.update(m365Licenses).set({ mfaEnabled: true }).where(eq(m365Licenses.userId, u.id)).catch(() => {});
     }
   }
 }
