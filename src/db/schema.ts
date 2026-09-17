@@ -178,3 +178,10 @@ export const enrollmentTokens = pgTable("enrollment_tokens", {
   revoked: boolean("revoked").notNull().default(false),
 });
 
+export const systemSettings = pgTable("system_settings", {
+  key: text("key").primaryKey(),
+  value: text("value").notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+
