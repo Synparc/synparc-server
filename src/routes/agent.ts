@@ -26,7 +26,7 @@ export const agentRoutes: FastifyPluginAsync = async (fastify, opts) => {
           machineType: payload.machineType,
           osName: payload.osName,
           osVersion: payload.osVersion,
-          lastIp: request.ip,
+          lastIp: payload.localIp || request.ip,
           lastCheckinAt: new Date(),
           lastIpSeenAt: new Date(),
           createdAt: new Date(),
@@ -40,7 +40,7 @@ export const agentRoutes: FastifyPluginAsync = async (fastify, opts) => {
             machineType: payload.machineType,
             osName: payload.osName,
             osVersion: payload.osVersion,
-            lastIp: request.ip,
+            lastIp: payload.localIp || request.ip,
             lastCheckinAt: new Date(),
             lastIpSeenAt: new Date(),
             updatedAt: new Date()
@@ -99,13 +99,23 @@ export const agentRoutes: FastifyPluginAsync = async (fastify, opts) => {
         return reply.status(400).send({ error: "Bad Request", message: "Invalid session payload" });
       }
 
-      // Resolve user by AD Guid if provided
+      // Resolve user by AD Guid or username if provided
       let resolvedUserId = null;
       if (payload.userAdGuid) {
         const userRec = await db.query.users.findFirst({
           where: eq(users.adGuid, payload.userAdGuid)
         });
         if (userRec) resolvedUserId = userRec.id;
+      }
+      if (!resolvedUserId && payload.username) {
+        const cleanUsername = (payload.username || "").split('\\').pop()?.trim();
+        if (cleanUsername) {
+          const { ilike } = await import("drizzle-orm");
+          const userRec = await db.query.users.findFirst({
+            where: ilike(users.username, cleanUsername)
+          });
+          if (userRec) resolvedUserId = userRec.id;
+        }
       }
 
       const [session] = await db.insert(machineSessions)
@@ -122,6 +132,49 @@ export const agentRoutes: FastifyPluginAsync = async (fastify, opts) => {
     } catch (error) {
       fastify.log.error(error);
       return reply.status(500).send({ error: "Internal Server Error", message: "Failed to insert session" });
+    }
+  });
+
+  // Endpoint de remontée des partages SMB et disques scannés par l'agent local
+  fastify.post("/shares", async (request, reply) => {
+    try {
+      const payload = request.body as any;
+      if (!payload || !payload.machineId || !Array.isArray(payload.shares)) {
+        return reply.status(400).send({ error: "Bad Request", message: "Invalid payload format" });
+      }
+
+      const { resources } = await import("../db/schema.js");
+
+      let processedCount = 0;
+      for (const share of payload.shares) {
+        if (!share.name || share.name === "IPC$" || share.name === "ADMIN$") continue;
+
+        const sharePath = share.path || `\\\\${payload.hostname || 'LOCAL'}\\${share.name}`;
+        const resType = share.resourceType || "smb_share";
+
+        await db.insert(resources).values({
+          resourceType: resType,
+          path: sharePath,
+          hostingMachineId: payload.machineId,
+          lastScannedAt: new Date()
+        }).onConflictDoUpdate({
+          target: resources.path,
+          set: {
+            resourceType: resType,
+            hostingMachineId: payload.machineId,
+            lastScannedAt: new Date()
+          }
+        });
+
+        processedCount++;
+      }
+
+      fastify.log.info(`📁 Agent SMB/Disks Scan: ${processedCount} ressources/disques enregistrés pour la machine ${payload.machineId}`);
+
+      return { status: "success", message: `${processedCount} partages/disques SMB enregistrés`, count: processedCount };
+    } catch (error) {
+      fastify.log.error(error);
+      return reply.status(500).send({ error: "Internal Server Error", message: "Failed to insert agent SMB shares" });
     }
   });
 
