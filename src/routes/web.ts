@@ -1,6 +1,6 @@
 import { FastifyPluginAsync } from "fastify";
 import { db } from "../db/index.js";
-import { machines, users, effectivePermissions, rawAcl, resources, machineMetrics, syncRuns, licenseKeys, enrollmentTokens, userGroupMemberships, groups, machineSessions, m365Licenses } from "../db/schema.js";
+import { machines, users, effectivePermissions, rawAcl, resources, machineMetrics, syncRuns, licenseKeys, enrollmentTokens, userGroupMemberships, groups, machineSessions, m365Licenses, auditLogs } from "../db/schema.js";
 import { eq, desc, and, or, ilike } from "drizzle-orm";
 import { mergeDuplicateUsers, mergeDuplicateMachines } from "./connectors.js";
 import { getM365Config, saveM365Config, syncM365GraphData } from "../services/m365.js";
@@ -687,6 +687,19 @@ export const webRoutes: FastifyPluginAsync = async (fastify, opts) => {
           aclEntries 
         } 
       };
+    } catch (error) {
+      fastify.log.error(error);
+      return reply.status(500).send({ error: "Internal Server Error" });
+    }
+  });
+
+  // FIX-24: Route d'audit log pour la traçabilité des événements système
+  fastify.get("/audit-logs", async (request, reply) => {
+    try {
+      const logs = await db.select().from(auditLogs)
+        .orderBy(desc(auditLogs.createdAt))
+        .limit(100);
+      return { status: "success", data: logs };
     } catch (error) {
       fastify.log.error(error);
       return reply.status(500).send({ error: "Internal Server Error" });
