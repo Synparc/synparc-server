@@ -7,6 +7,7 @@ import {
   primaryKey,
   check,
   uniqueIndex,
+  index,
   integer,
   numeric,
   bigint
@@ -27,7 +28,9 @@ export const users = pgTable("users", {
   lastLogonAd: timestamp("last_logon_ad", { withTimezone: true }),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
-});
+}, (t) => ({
+  idxUsersUsername: index("idx_users_username").on(t.username),
+}));
 
 export const groups = pgTable("groups", {
   id: uuid("id").primaryKey().defaultRandom(),
@@ -69,7 +72,9 @@ export const machines = pgTable("machines", {
   lastCheckinAt: timestamp("last_checkin_at", { withTimezone: true }),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
-});
+}, (t) => ({
+  idxMachinesLastCheckin: index("idx_machines_last_checkin").on(t.lastCheckinAt),
+}));
 
 export const machineSessions = pgTable("machine_sessions", {
   id: uuid("id").primaryKey().defaultRandom(),
@@ -79,7 +84,10 @@ export const machineSessions = pgTable("machine_sessions", {
   sessionEnd: timestamp("session_end", { withTimezone: true }),
   sessionType: text("session_type"),
   detectedAt: timestamp("detected_at", { withTimezone: true }).notNull().defaultNow(),
-});
+}, (t) => ({
+  idxSessionsMachine: index("idx_sessions_machine").on(t.machineId),
+  idxSessionsUser: index("idx_sessions_user").on(t.userId),
+}));
 
 // Hypertable TimescaleDB
 export const machineMetrics = pgTable("machine_metrics", {
@@ -88,7 +96,9 @@ export const machineMetrics = pgTable("machine_metrics", {
   cpuPercent: numeric("cpu_percent"),
   ramPercent: numeric("ram_percent"),
   uptimeSeconds: bigint("uptime_seconds", { mode: 'number' }),
-});
+}, (t) => ({
+  idxMetricsMachineTime: index("idx_metrics_machine_time").on(t.machineId, t.time),
+}));
 
 
 // --- 3. RESSOURCES & PERMISSIONS ---
@@ -110,8 +120,8 @@ export const rawAcl = pgTable("raw_acl", {
   accessLevel: text("access_level").notNull(),
   collectedAt: timestamp("collected_at", { withTimezone: true }).notNull().defaultNow(),
 }, (t) => ({
-  // Constraint: exactly one of userId or groupId must be null
   userOrGroupCheck: check("user_or_group_check", sql`(${t.userId} IS NULL) != (${t.groupId} IS NULL)`),
+  idxRawAclResource: index("idx_raw_acl_resource").on(t.resourceId),
 }));
 
 export const effectivePermissions = pgTable("effective_permissions", {
@@ -124,6 +134,8 @@ export const effectivePermissions = pgTable("effective_permissions", {
   computedAt: timestamp("computed_at", { withTimezone: true }).notNull().defaultNow(),
 }, (t) => ({
   uniquePermission: uniqueIndex("idx_eff_perm_unique").on(t.userId, t.resourceId, t.accessLevel, t.originType),
+  idxEffPermUser: index("idx_eff_perm_user").on(t.userId),
+  idxEffPermResource: index("idx_eff_perm_resource").on(t.resourceId),
 }));
 
 
