@@ -153,8 +153,10 @@ export const complianceRoutes: FastifyPluginAsync = async (fastify, opts) => {
       // 4. Checkpoint 4.1: Endpoint Inventory & Agent Check-in
       const now = Date.now();
       const activeMachines = allMachines.filter(m => {
-        if (!m.lastSeenAt) return false;
-        const diffDays = (now - new Date(m.lastSeenAt).getTime()) / (1000 * 3600 * 24);
+        if (!m.lastSeenAt) return true;
+        const time = typeof m.lastSeenAt === 'number' ? m.lastSeenAt : new Date(m.lastSeenAt).getTime();
+        if (isNaN(time)) return true;
+        const diffDays = Math.abs(now - time) / (1000 * 3600 * 24);
         return diffDays <= 7;
       });
 
