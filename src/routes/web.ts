@@ -5,6 +5,9 @@ import { eq, desc, and, or, ilike } from "drizzle-orm";
 import { mergeDuplicateUsers, mergeDuplicateMachines } from "./connectors.js";
 import { getM365Config, saveM365Config, syncM365GraphData } from "../services/m365.js";
 
+let auditCacheData: any = null;
+let auditCacheExpiresAt = 0;
+
 export const webRoutes: FastifyPluginAsync = async (fastify, opts) => {
 
   
@@ -79,7 +82,6 @@ export const webRoutes: FastifyPluginAsync = async (fastify, opts) => {
   // 2. Liste des utilisateurs (avec fusion automatique des doublons)
   fastify.get("/users", async (request, reply) => {
     try {
-      await mergeDuplicateUsers().catch(() => {});
       const rawUsers = await db.select().from(users).orderBy(users.username);
       
       // In-memory fallback deduplication & attribute merging
@@ -396,6 +398,10 @@ export const webRoutes: FastifyPluginAsync = async (fastify, opts) => {
   // 14. Audit de Sécurité & Posture Globale
   fastify.get("/audit/security", async (request, reply) => {
     try {
+      if (auditCacheData && Date.now() < auditCacheExpiresAt) {
+        return { status: "success", data: auditCacheData };
+      }
+
       const allUsers = await db.select().from(users);
       const allM365 = await db.select().from(m365Licenses);
       const allResources = await db.select().from(resources);
@@ -505,20 +511,25 @@ export const webRoutes: FastifyPluginAsync = async (fastify, opts) => {
         low: alerts.filter((a) => a.severity === "low").length,
       };
 
+      const resultData = {
+        score,
+        riskCounts,
+        alerts,
+        stats: {
+          totalUsers: allUsers.length,
+          totalShares: allResources.length,
+          totalMachines: allMachines.length,
+          mfaCoveragePercent,
+          disabledCount,
+        },
+      };
+
+      auditCacheData = resultData;
+      auditCacheExpiresAt = Date.now() + 5000;
+
       return {
         status: "success",
-        data: {
-          score,
-          riskCounts,
-          alerts,
-          stats: {
-            totalUsers: allUsers.length,
-            totalShares: allResources.length,
-            totalMachines: allMachines.length,
-            mfaCoveragePercent,
-            disabledCount,
-          },
-        },
+        data: resultData
       };
     } catch (error) {
       fastify.log.error(error);
