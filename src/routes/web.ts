@@ -2,15 +2,16 @@ import { FastifyPluginAsync } from "fastify";
 import { db } from "../db/index.js";
 import { machines, users, effectivePermissions, rawAcl, resources, machineMetrics, syncRuns, licenseKeys, enrollmentTokens, userGroupMemberships, groups, machineSessions, m365Licenses } from "../db/schema.js";
 import { eq, desc, and, or, ilike } from "drizzle-orm";
-import { mergeDuplicateUsers } from "./connectors.js";
+import { mergeDuplicateUsers, mergeDuplicateMachines } from "./connectors.js";
 import { getM365Config, saveM365Config, syncM365GraphData } from "../services/m365.js";
 
 export const webRoutes: FastifyPluginAsync = async (fastify, opts) => {
 
   
-  // 1. Liste des machines
+  // 1. Liste des machines (avec fusion automatique des doublons par hostname)
   fastify.get("/machines", async (request, reply) => {
     try {
+      await mergeDuplicateMachines().catch(() => {});
       const allMachines = await db.select().from(machines).orderBy(desc(machines.lastCheckinAt));
       return { status: "success", data: allMachines };
     } catch (error) {
