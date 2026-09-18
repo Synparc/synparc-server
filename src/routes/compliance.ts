@@ -30,9 +30,16 @@ export interface CompliancePillar {
   failCount: number;
 }
 
+let nis2CacheData: any = null;
+let nis2CacheExpiresAt = 0;
+
 export const complianceRoutes: FastifyPluginAsync = async (fastify, opts) => {
   fastify.get("/nis2", async (request, reply) => {
     try {
+      if (nis2CacheData && Date.now() < nis2CacheExpiresAt) {
+        return { status: "success", data: nis2CacheData };
+      }
+
       const allUsers = await db.select().from(users);
       const allM365 = await db.select().from(m365Licenses);
       const allResources = await db.select().from(resources);
@@ -345,23 +352,28 @@ export const complianceRoutes: FastifyPluginAsync = async (fastify, opts) => {
           targetUrl: c.targetUrl
         }));
 
+      const resultData = {
+        overallScore,
+        nis2Status,
+        entityCategory: "EE", // Entité Essentielle
+        evaluatedAt: new Date(),
+        stats: {
+          totalCheckpoints: checkpoints.length,
+          passCheckpoints: checkpoints.filter(c => c.status === "pass").length,
+          warnCheckpoints: checkpoints.filter(c => c.status === "warn").length,
+          failCheckpoints: checkpoints.filter(c => c.status === "fail").length,
+        },
+        pillars,
+        checkpoints,
+        remediationRoadmap
+      };
+
+      nis2CacheData = resultData;
+      nis2CacheExpiresAt = Date.now() + 5000;
+
       return {
         status: "success",
-        data: {
-          overallScore,
-          nis2Status,
-          entityCategory: "EE", // Entité Essentielle
-          evaluatedAt: new Date(),
-          stats: {
-            totalCheckpoints: checkpoints.length,
-            passCheckpoints: checkpoints.filter(c => c.status === "pass").length,
-            warnCheckpoints: checkpoints.filter(c => c.status === "warn").length,
-            failCheckpoints: checkpoints.filter(c => c.status === "fail").length,
-          },
-          pillars,
-          checkpoints,
-          remediationRoadmap
-        }
+        data: resultData
       };
     } catch (error) {
       fastify.log.error(error);
