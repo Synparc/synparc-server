@@ -1,7 +1,7 @@
 import { FastifyPluginAsync } from "fastify";
 import { db } from "../db/index.js";
-import { users, groups, userGroupMemberships, groupGroupMemberships, m365Licenses, resources, rawAcl, machineSessions, effectivePermissions } from "../db/schema.js";
-import { eq, or, sql } from "drizzle-orm";
+import { users, groups, userGroupMemberships, groupGroupMemberships, m365Licenses, resources, rawAcl, machineSessions, effectivePermissions, machines, machineMetrics } from "../db/schema.js";
+import { eq, or, sql, and } from "drizzle-orm";
 
 export async function mergeDuplicateUsers() {
   const allUsers = await db.select().from(users);
@@ -33,13 +33,26 @@ export async function mergeDuplicateUsers() {
         if (!mergedTitle && dup.title) mergedTitle = dup.title;
         if (dup.adEnabled !== undefined) mergedAdEnabled = dup.adEnabled;
 
-        await db.update(userGroupMemberships).set({ userId: primary.id }).where(eq(userGroupMemberships.userId, dup.id)).catch(() => {});
-        await db.update(machineSessions).set({ userId: primary.id }).where(eq(machineSessions.userId, dup.id)).catch(() => {});
-        await db.update(rawAcl).set({ userId: primary.id }).where(eq(rawAcl.userId, dup.id)).catch(() => {});
-        await db.update(effectivePermissions).set({ userId: primary.id }).where(eq(effectivePermissions.userId, dup.id)).catch(() => {});
-        await db.update(m365Licenses).set({ userId: primary.id }).where(eq(m365Licenses.userId, dup.id)).catch(() => {});
+      // FIX-12: Remplacer les .catch(() => {}) vides par des logs d'avertissement
+        await db.update(userGroupMemberships).set({ userId: primary.id }).where(eq(userGroupMemberships.userId, dup.id)).catch((err) => {
+          console.warn(`Merge users: impossible de réassigner les memberships du doublon ${dup.id}: ${err.message}`);
+        });
+        await db.update(machineSessions).set({ userId: primary.id }).where(eq(machineSessions.userId, dup.id)).catch((err) => {
+          console.warn(`Merge users: impossible de réassigner les sessions du doublon ${dup.id}: ${err.message}`);
+        });
+        await db.update(rawAcl).set({ userId: primary.id }).where(eq(rawAcl.userId, dup.id)).catch((err) => {
+          console.warn(`Merge users: impossible de réassigner les ACL du doublon ${dup.id}: ${err.message}`);
+        });
+        await db.update(effectivePermissions).set({ userId: primary.id }).where(eq(effectivePermissions.userId, dup.id)).catch((err) => {
+          console.warn(`Merge users: impossible de réassigner les permissions du doublon ${dup.id}: ${err.message}`);
+        });
+        await db.update(m365Licenses).set({ userId: primary.id }).where(eq(m365Licenses.userId, dup.id)).catch((err) => {
+          console.warn(`Merge users: impossible de réassigner les licences du doublon ${dup.id}: ${err.message}`);
+        });
 
-        await db.delete(users).where(eq(users.id, dup.id)).catch(() => {});
+        await db.delete(users).where(eq(users.id, dup.id)).catch((err) => {
+          console.warn(`Merge users: impossible de supprimer le doublon ${dup.id}: ${err.message}`);
+        });
       }
 
       await db.update(users).set({
@@ -78,10 +91,18 @@ export async function mergeDuplicateGroups() {
         if (!mergedDescription && dup.description) mergedDescription = dup.description;
         if (!mergedType && dup.groupType) mergedType = dup.groupType;
 
-        await db.update(userGroupMemberships).set({ groupId: primary.id }).where(eq(userGroupMemberships.groupId, dup.id)).catch(() => {});
-        await db.update(rawAcl).set({ groupId: primary.id }).where(eq(rawAcl.groupId, dup.id)).catch(() => {});
-        await db.update(effectivePermissions).set({ originGroupId: primary.id }).where(eq(effectivePermissions.originGroupId, dup.id)).catch(() => {});
-        await db.delete(groups).where(eq(groups.id, dup.id)).catch(() => {});
+        await db.update(userGroupMemberships).set({ groupId: primary.id }).where(eq(userGroupMemberships.groupId, dup.id)).catch((err) => {
+          console.warn(`Merge groups: impossible de réassigner les memberships du groupe ${dup.id}: ${err.message}`);
+        });
+        await db.update(rawAcl).set({ groupId: primary.id }).where(eq(rawAcl.groupId, dup.id)).catch((err) => {
+          console.warn(`Merge groups: impossible de réassigner les ACL du groupe ${dup.id}: ${err.message}`);
+        });
+        await db.update(effectivePermissions).set({ originGroupId: primary.id }).where(eq(effectivePermissions.originGroupId, dup.id)).catch((err) => {
+          console.warn(`Merge groups: impossible de réassigner les permissions du groupe ${dup.id}: ${err.message}`);
+        });
+        await db.delete(groups).where(eq(groups.id, dup.id)).catch((err) => {
+          console.warn(`Merge groups: impossible de supprimer le groupe doublon ${dup.id}: ${err.message}`);
+        });
       }
 
       await db.update(groups).set({
@@ -107,9 +128,10 @@ export async function mergeDuplicateMachines() {
 
   for (const [hostname, mList] of byHostname.entries()) {
     if (mList.length > 1) {
+      // FIX-01: lastSeenAt n'existe pas dans le schéma — utiliser uniquement lastCheckinAt
       mList.sort((a, b) => {
-        const timeA = a.lastCheckinAt ? new Date(a.lastCheckinAt).getTime() : (a.lastSeenAt ? new Date(a.lastSeenAt).getTime() : 0);
-        const timeB = b.lastCheckinAt ? new Date(b.lastCheckinAt).getTime() : (b.lastSeenAt ? new Date(b.lastSeenAt).getTime() : 0);
+        const timeA = a.lastCheckinAt ? new Date(a.lastCheckinAt).getTime() : 0;
+        const timeB = b.lastCheckinAt ? new Date(b.lastCheckinAt).getTime() : 0;
         return timeB - timeA;
       });
 
@@ -117,10 +139,18 @@ export async function mergeDuplicateMachines() {
       const duplicates = mList.slice(1);
 
       for (const dup of duplicates) {
-        await db.update(machineSessions).set({ machineId: primary.id }).where(eq(machineSessions.machineId, dup.id)).catch(() => {});
-        await db.update(machineMetrics).set({ machineId: primary.id }).where(eq(machineMetrics.machineId, dup.id)).catch(() => {});
-        await db.update(resources).set({ hostingMachineId: primary.id }).where(eq(resources.hostingMachineId, dup.id)).catch(() => {});
-        await db.delete(machines).where(eq(machines.id, dup.id)).catch(() => {});
+        await db.update(machineSessions).set({ machineId: primary.id }).where(eq(machineSessions.machineId, dup.id)).catch((err) => {
+          console.warn(`Merge machines: impossible de réassigner les sessions du doublon ${dup.id}: ${err.message}`);
+        });
+        await db.update(machineMetrics).set({ machineId: primary.id }).where(eq(machineMetrics.machineId, dup.id)).catch((err) => {
+          console.warn(`Merge machines: impossible de réassigner les métriques du doublon ${dup.id}: ${err.message}`);
+        });
+        await db.update(resources).set({ hostingMachineId: primary.id }).where(eq(resources.hostingMachineId, dup.id)).catch((err) => {
+          console.warn(`Merge machines: impossible de réassigner les ressources du doublon ${dup.id}: ${err.message}`);
+        });
+        await db.delete(machines).where(eq(machines.id, dup.id)).catch((err) => {
+          console.warn(`Merge machines: impossible de supprimer la machine doublon ${dup.id}: ${err.message}`);
+        });
       }
     }
   }
@@ -250,28 +280,36 @@ export async function seedInitialAclsAndMemberships() {
   await recomputeEffectivePermissions();
 
   // 4. Seed & update m365_licenses for all users
+  // FIX-02: Suppression du biais isDjaelOrAdmin — MFA uniquement via sync M365 réelle
   for (const u of allUsers) {
-    const un = (u.username || "").toLowerCase();
-    const dn = (u.displayName || "").toLowerCase();
-    const email = (u.email || "").toLowerCase();
-    const isMfa = un.includes("djael") || dn.includes("djael") || email.includes("djael") || un.includes("admin");
-    const sku = (un.includes("djael") || dn.includes("djael") || un.includes("admin")) ? "Microsoft 365 Enterprise E5" : "Microsoft 365 Business Premium";
+    const sku = "Microsoft 365 Business Premium";
 
     const userLic = await db.select().from(m365Licenses).where(eq(m365Licenses.userId, u.id)).limit(1);
     if (userLic.length === 0) {
       await db.insert(m365Licenses).values({
         userId: u.id,
         licenseSku: sku,
-        mfaEnabled: isMfa,
+        mfaEnabled: false, // Par défaut false — à activer via sync M365 réelle
         lastSyncedAt: new Date()
-      }).catch(() => {});
-    } else if (isMfa && !userLic[0].mfaEnabled) {
-      await db.update(m365Licenses).set({ mfaEnabled: true }).where(eq(m365Licenses.userId, u.id)).catch(() => {});
+      }).catch((err) => {
+        console.warn(`Seed licences: impossible d'insérer pour ${u.id}: ${err.message}`);
+      });
     }
   }
 }
 
 export const connectorRoutes: FastifyPluginAsync = async (fastify, opts) => {
+
+  // FIX-05: Authentification par secret partagé sur toutes les routes connecteurs
+  fastify.addHook('preHandler', async (request, reply) => {
+    const secret = request.headers['x-connector-secret'] as string;
+    if (!secret || secret !== process.env.CONNECTOR_SECRET) {
+      // En mode développement (pas de secret configuré), on laisse passer pour compatibilité
+      if (process.env.CONNECTOR_SECRET && process.env.CONNECTOR_SECRET.length > 0) {
+        return reply.status(401).send({ error: 'Unauthorized', message: 'X-Connector-Secret invalide ou manquant' });
+      }
+    }
+  });
 
   // 1. Synchro Active Directory
   fastify.post("/ad/sync", async (request, reply) => {
@@ -343,23 +381,35 @@ export const connectorRoutes: FastifyPluginAsync = async (fastify, opts) => {
       await mergeDuplicateUsers();
       await mergeDuplicateGroups();
 
-      // Les memberships (user_group_memberships)
+      // FIX-11: Sync diff-based des memberships (remplace la suppression totale brutale)
+      // Plus de DELETE sans WHERE qui effaçait TOUS les memberships de la DB
       if (payload.memberships && Array.isArray(payload.memberships)) {
-        await db.delete(userGroupMemberships);
-        
-        const membershipsToInsert = [];
+        // Reconstruire le set de paires (userId, groupId) du nouveau payload
+        const newMembershipKeys = new Set<string>();
+        const membershipsToInsert: { userId: string; groupId: string }[] = [];
+
         for (const m of payload.memberships) {
           const userRec = await db.query.users.findFirst({ where: eq(users.adGuid, m.userGuid) });
           const groupRec = await db.query.groups.findFirst({ where: eq(groups.adGuid, m.groupGuid) });
-          
           if (userRec && groupRec) {
-            membershipsToInsert.push({
-              userId: userRec.id,
-              groupId: groupRec.id
-            });
+            const key = `${userRec.id}|${groupRec.id}`;
+            newMembershipKeys.add(key);
+            membershipsToInsert.push({ userId: userRec.id, groupId: groupRec.id });
           }
         }
-        
+
+        // Supprimer UNIQUEMENT les memberships qui ne sont plus dans le payload
+        const existingMemberships = await db.select().from(userGroupMemberships);
+        for (const existing of existingMemberships) {
+          const key = `${existing.userId}|${existing.groupId}`;
+          if (!newMembershipKeys.has(key)) {
+            await db.delete(userGroupMemberships)
+              .where(and(eq(userGroupMemberships.userId, existing.userId), eq(userGroupMemberships.groupId, existing.groupId)))
+              .catch((err) => console.warn(`Sync AD: impossible de supprimer membership obsolète: ${err.message}`));
+          }
+        }
+
+        // Insérer les nouveaux memberships (onConflictDoNothing = idempotent)
         if (membershipsToInsert.length > 0) {
           await db.insert(userGroupMemberships).values(membershipsToInsert).onConflictDoNothing();
         }
@@ -385,13 +435,19 @@ export const connectorRoutes: FastifyPluginAsync = async (fastify, opts) => {
       for (const lic of payload.licenses) {
         const userRec = await db.query.users.findFirst({ where: eq(users.adGuid, lic.userAdGuid) });
         if (userRec) {
-          await db.delete(m365Licenses).where(eq(m365Licenses.userId, userRec.id));
-          
+          // FIX-15: Upsert au lieu de DELETE + INSERT pour éviter les doublons lors d'une re-sync
           await db.insert(m365Licenses).values({
             userId: userRec.id,
             licenseSku: lic.licenseSku,
             mfaEnabled: lic.mfaEnabled,
             lastSyncedAt: new Date()
+          }).onConflictDoUpdate({
+            target: m365Licenses.userId,
+            set: {
+              licenseSku: lic.licenseSku,
+              mfaEnabled: lic.mfaEnabled,
+              lastSyncedAt: new Date()
+            }
           });
         }
       }
