@@ -6,6 +6,7 @@ import { sql } from "drizzle-orm";
 import { agentRoutes } from "./routes/agent.js";
 import { connectorRoutes } from "./routes/connectors.js";
 import { webRoutes } from "./routes/web.js";
+import { complianceRoutes } from "./routes/compliance.js";
 
 import cors from "@fastify/cors";
 
@@ -22,6 +23,7 @@ fastify.register(cors, {
 fastify.register(agentRoutes, { prefix: "/api/agent" });
 fastify.register(connectorRoutes, { prefix: "/api/connectors" });
 fastify.register(webRoutes, { prefix: "/api/web" });
+fastify.register(complianceRoutes, { prefix: "/api/web/compliance" });
 
 // Route de base pour vérifier que le serveur tourne
 fastify.get("/health", async (request, reply) => {
