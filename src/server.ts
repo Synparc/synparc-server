@@ -9,9 +9,16 @@ import { webRoutes } from "./routes/web.js";
 import { complianceRoutes } from "./routes/compliance.js";
 
 import cors from "@fastify/cors";
+import rateLimit from "@fastify/rate-limit";
 
 const fastify = Fastify({
   logger: true,
+});
+
+// FIX-10: Rate limiting anti-DoS (300 requêtes/min par IP)
+fastify.register(rateLimit, {
+  max: 300,
+  timeWindow: "1 minute",
 });
 
 fastify.register(cors, {
