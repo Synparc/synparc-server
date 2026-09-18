@@ -15,8 +15,12 @@ const fastify = Fastify({
 });
 
 fastify.register(cors, {
-  origin: "*", // Pour le dev local
-  methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"]
+  // FIX-06: CORS restreint à la liste d'origines autorisées (plus de wildcard *)
+  origin: process.env.CORS_ORIGIN
+    ? process.env.CORS_ORIGIN.split(',')
+    : ['http://localhost:3000', 'http://127.0.0.1:3000'],
+  methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+  credentials: true
 });
 
 // Enregistrement des routes
