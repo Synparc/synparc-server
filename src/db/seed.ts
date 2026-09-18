@@ -11,13 +11,13 @@ export async function seedDemoDatabase() {
   let demoMachineId = existingMachines[0]?.id;
   if (existingMachines.length === 0) {
     const inserted = await db.insert(machines).values({
+      adGuid: "00000000-0000-0000-0000-000000000001",
       hostname: "POSTE71",
       osName: "Windows 11 Pro 23H2",
-      ipAddress: "192.168.1.71",
-      agentVersion: "v1.2.0",
+      lastIp: "192.168.1.71",
       status: "online",
-      lastSeenAt: new Date(),
-    }).returning();
+      lastCheckinAt: new Date(),
+    } as any).returning();
     demoMachineId = inserted[0].id;
   }
 
@@ -26,8 +26,8 @@ export async function seedDemoDatabase() {
   let adminGroupId = existingGroups[0]?.id;
   if (existingGroups.length === 0) {
     const inserted = await db.insert(groups).values([
-      { name: "Direction", description: "Membres de la direction IT & Générale", groupType: "Security" },
-      { name: "Administrateurs Domaine", description: "Administrateurs système AD", groupType: "Security" }
+      { adGuid: "00000000-0000-0000-0000-000000000002", name: "Direction", description: "Membres de la direction IT & Générale", groupType: "Security" },
+      { adGuid: "00000000-0000-0000-0000-000000000003", name: "Administrateurs Domaine", description: "Administrateurs système AD", groupType: "Security" }
     ]).returning();
     adminGroupId = inserted[0].id;
   }
