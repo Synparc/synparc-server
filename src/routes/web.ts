@@ -8,11 +8,19 @@ import { getM365Config, saveM365Config, syncM365GraphData } from "../services/m3
 export const webRoutes: FastifyPluginAsync = async (fastify, opts) => {
 
   
-  // 1. Liste des machines (avec fusion automatique des doublons par hostname)
+  // 1. Liste des machines
+  // FIX-16: mergeDuplicateMachines() déplacé dans le check-in agent (non-bloquant via setImmediate)
+  // Plus appelé à chaque GET pour éviter la charge inutile
   fastify.get("/machines", async (request, reply) => {
     try {
-      await mergeDuplicateMachines().catch(() => {});
-      const allMachines = await db.select().from(machines).orderBy(desc(machines.lastCheckinAt));
+      // FIX-17: Pagination basique (compatibilité ascendante: limit=100 par défaut)
+      const { page = '1', limit = '100' } = request.query as any;
+      const pageNum = Math.max(1, parseInt(page));
+      const limitNum = Math.min(500, Math.max(1, parseInt(limit)));
+      const allMachines = await db.select().from(machines)
+        .orderBy(desc(machines.lastCheckinAt))
+        .limit(limitNum)
+        .offset((pageNum - 1) * limitNum);
       return { status: "success", data: allMachines };
     } catch (error) {
       fastify.log.error(error);
@@ -405,20 +413,17 @@ export const webRoutes: FastifyPluginAsync = async (fastify, opts) => {
 
       let score = 100;
 
-      // 1. MFA Check
+      // 1. MFA Check — FIX-02: uniquement basé sur mfaEnabled réel en DB
       let mfaCount = 0;
       for (const u of allUsers) {
         const lic = allM365.find((m) => m.userId === u.id);
-        const un = (u.username || "").toLowerCase();
-        const dn = (u.displayName || "").toLowerCase();
-        const email = (u.email || "").toLowerCase();
-        const isDjaelOrAdmin = un.includes("djael") || dn.includes("djael") || email.includes("djael") || un.includes("admin");
-        const hasMfa = (lic && Boolean(lic.mfaEnabled)) || isDjaelOrAdmin;
+        const hasMfa = lic ? Boolean(lic.mfaEnabled) : false;
 
         if (hasMfa) {
           mfaCount++;
         } else if (u.adEnabled) {
           score -= 10;
+          const un = (u.username || "").toLowerCase();
           const isPrivileged =
             un.includes("admin") ||
             (u.title && u.title.toLowerCase().includes("admin")) ||
