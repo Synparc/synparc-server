@@ -157,6 +157,7 @@ export async function syncM365GraphData() {
     }
 
     // Fallback sync & ensure licenses exist for all users in DB
+    // FIX-02: Suppression du biais isDjaelOrAdmin — mfaEnabled par défaut false, à activer via sync M365 réelle
     for (const u of allUsers) {
       const existingLic = await db
         .select()
@@ -165,19 +166,14 @@ export async function syncM365GraphData() {
         .limit(1);
 
       if (existingLic.length === 0) {
-        const defaultSku = u.username.toLowerCase().includes("admin") || u.username.toLowerCase().includes("djael")
+        const defaultSku = u.username.toLowerCase().includes("admin")
           ? "Microsoft 365 Enterprise E5"
           : "Microsoft 365 Business Premium";
-        
-        const un = (u.username || "").toLowerCase();
-        const dn = (u.displayName || "").toLowerCase();
-        const email = (u.email || "").toLowerCase();
-        const mfa = un.includes("djael") || dn.includes("djael") || email.includes("djael") || un.includes("admin");
 
         await db.insert(m365Licenses).values({
           userId: u.id,
           licenseSku: defaultSku,
-          mfaEnabled: mfa,
+          mfaEnabled: false, // Par défaut false — à activer via sync réelle Microsoft Graph
           lastSyncedAt: new Date(),
         });
         recordsProcessed++;
