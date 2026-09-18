@@ -93,6 +93,39 @@ export async function mergeDuplicateGroups() {
   }
 }
 
+export async function mergeDuplicateMachines() {
+  const allMachines = await db.select().from(machines);
+  const byHostname = new Map<string, typeof allMachines>();
+
+  for (const m of allMachines) {
+    const key = (m.hostname || "").toLowerCase().trim();
+    if (!key) continue;
+    const list = byHostname.get(key) || [];
+    list.push(m);
+    byHostname.set(key, list);
+  }
+
+  for (const [hostname, mList] of byHostname.entries()) {
+    if (mList.length > 1) {
+      mList.sort((a, b) => {
+        const timeA = a.lastCheckinAt ? new Date(a.lastCheckinAt).getTime() : (a.lastSeenAt ? new Date(a.lastSeenAt).getTime() : 0);
+        const timeB = b.lastCheckinAt ? new Date(b.lastCheckinAt).getTime() : (b.lastSeenAt ? new Date(b.lastSeenAt).getTime() : 0);
+        return timeB - timeA;
+      });
+
+      const primary = mList[0];
+      const duplicates = mList.slice(1);
+
+      for (const dup of duplicates) {
+        await db.update(machineSessions).set({ machineId: primary.id }).where(eq(machineSessions.machineId, dup.id)).catch(() => {});
+        await db.update(machineMetrics).set({ machineId: primary.id }).where(eq(machineMetrics.machineId, dup.id)).catch(() => {});
+        await db.update(resources).set({ hostingMachineId: primary.id }).where(eq(resources.hostingMachineId, dup.id)).catch(() => {});
+        await db.delete(machines).where(eq(machines.id, dup.id)).catch(() => {});
+      }
+    }
+  }
+}
+
 export async function recomputeEffectivePermissions(targetResourceId?: string) {
   const allResources = targetResourceId 
     ? await db.select().from(resources).where(eq(resources.id, targetResourceId))
