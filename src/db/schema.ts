@@ -135,7 +135,9 @@ export const m365Licenses = pgTable("m365_licenses", {
   licenseSku: text("license_sku").notNull(),
   mfaEnabled: boolean("mfa_enabled"),
   lastSyncedAt: timestamp("last_synced_at", { withTimezone: true }).notNull().defaultNow(),
-});
+}, (t) => ({
+  uniqueUserLicense: uniqueIndex("idx_m365_user_unique").on(t.userId),
+}));
 
 
 // --- 5. LICENSING SYNPARC ---
@@ -182,6 +184,15 @@ export const systemSettings = pgTable("system_settings", {
   key: text("key").primaryKey(),
   value: text("value").notNull(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+export const auditLogs = pgTable("audit_logs", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  action: text("action").notNull(),
+  actor: text("actor").notNull(),
+  details: text("details"),
+  ipAddress: text("ip_address"),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });
 
 
