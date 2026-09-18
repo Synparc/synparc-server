@@ -1,11 +1,30 @@
 import { FastifyPluginAsync } from "fastify";
 import { db } from "../db/index.js";
-import { machines, machineMetrics, machineSessions, users } from "../db/schema.js";
-import { eq } from "drizzle-orm";
+import { machines, machineMetrics, machineSessions, users, enrollmentTokens } from "../db/schema.js";
+import { eq, and, ilike } from "drizzle-orm";
+import { mergeDuplicateMachines } from "./connectors.js";
 
 export const agentRoutes: FastifyPluginAsync = async (fastify, opts) => {
+
+  // FIX-05: Hook d'authentification par token d'enrôlement sur toutes les routes agent
+  fastify.addHook('preHandler', async (request, reply) => {
+    const token = request.headers['x-agent-token'] as string;
+    if (!token) {
+      return reply.status(401).send({ error: 'Unauthorized', message: 'Header X-Agent-Token manquant' });
+    }
+    // Valider le token contre la table enrollmentTokens (hash SHA-256)
+    const crypto = await import('crypto');
+    const tokenHash = crypto.createHash('sha256').update(token).digest('hex');
+    const validToken = await db.select()
+      .from(enrollmentTokens)
+      .where(and(eq(enrollmentTokens.tokenHash, tokenHash), eq(enrollmentTokens.revoked, false)))
+      .limit(1);
+    if (validToken.length === 0) {
+      return reply.status(401).send({ error: 'Unauthorized', message: 'Token invalide ou révoqué. Générez un token dans Paramètres > Jetons d\'enrôlement.' });
+    }
+  });
   
-  // Endpoint de Check-in (Appelé par l'agent C# au démarrage et régulièrement)
+  // Endpoint de Check-in (Appelé par l'agent au démarrage et régulièrement)
   fastify.post("/checkin", async (request, reply) => {
     try {
       const payload = request.body as any;
@@ -50,6 +69,14 @@ export const agentRoutes: FastifyPluginAsync = async (fastify, opts) => {
 
       fastify.log.info(`✅ Agent check-in successful for ${machine.hostname} (${machine.adGuid})`);
 
+      // FIX-16: Déduplication déclenchée de façon non-bloquante après le check-in
+      // (déplacée hors du GET /machines pour ne plus charger inutilement chaque affichage)
+      setImmediate(() => {
+        mergeDuplicateMachines().catch((err) =>
+          fastify.log.warn(`Déduplication machines échouée après check-in: ${err.message}`)
+        );
+      });
+
       return {
         status: "success",
         message: "Check-in registered",
@@ -73,7 +100,6 @@ export const agentRoutes: FastifyPluginAsync = async (fastify, opts) => {
       }
 
       // TimescaleDB : insertion en masse (bulk) des métriques
-      // payload.metrics = [{ time: "2023-10-10T...", cpuPercent: 12.5, ramPercent: 45.2, uptimeSeconds: 3600 }, ...]
       const recordsToInsert = payload.metrics.map((m: any) => ({
         machineId: payload.machineId,
         time: new Date(m.time),
@@ -91,7 +117,7 @@ export const agentRoutes: FastifyPluginAsync = async (fastify, opts) => {
     }
   });
 
-  // Endpoint de remontée des sessions utilisateurs (Appelé lors d'un login/logoff)
+  // Endpoint de remontée des sessions utilisateurs
   fastify.post("/sessions", async (request, reply) => {
     try {
       const payload = request.body as any;
@@ -99,7 +125,6 @@ export const agentRoutes: FastifyPluginAsync = async (fastify, opts) => {
         return reply.status(400).send({ error: "Bad Request", message: "Invalid session payload" });
       }
 
-      // Resolve user by AD Guid or username if provided
       let resolvedUserId = null;
       if (payload.userAdGuid) {
         const userRec = await db.query.users.findFirst({
@@ -110,7 +135,6 @@ export const agentRoutes: FastifyPluginAsync = async (fastify, opts) => {
       if (!resolvedUserId && payload.username) {
         const cleanUsername = (payload.username || "").split('\\').pop()?.trim();
         if (cleanUsername) {
-          const { ilike } = await import("drizzle-orm");
           const userRec = await db.query.users.findFirst({
             where: ilike(users.username, cleanUsername)
           });
@@ -179,3 +203,4 @@ export const agentRoutes: FastifyPluginAsync = async (fastify, opts) => {
   });
 
 };
+
